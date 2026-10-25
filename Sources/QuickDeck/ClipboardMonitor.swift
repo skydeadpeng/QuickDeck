@@ -17,11 +17,11 @@ struct ClipboardItem: Identifiable, Equatable {
 final class ClipboardMonitor: ObservableObject {
     @Published private(set) var items: [ClipboardItem] = []
     private var lastChangeCount = NSPasteboard.general.changeCount
-    private var timer: Timer?
+    private var timer: VisibilityAwareTimer?
     static let maxItems = 50
 
     init() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
+        timer = VisibilityAwareTimer(interval: 0.6) { [weak self] in
             self?.poll()
         }
     }

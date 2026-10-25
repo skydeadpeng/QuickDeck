@@ -129,7 +129,9 @@ struct DeckView: View {
                             Text("\(now.temperature)°")
                         }
                         .font(.system(size: 13, weight: .medium))
-                        .help("\(weather.cityLabel) · \(info.text)")
+                        .contentShape(Rectangle())
+                        .onTapGesture { WindowManager.presentWeatherDetail(weather: weather) }
+                        .help("\(weather.cityLabel) · \(info.text) · 点击查看 24 小时预报")
                     }
                     if let level = battery.level {
                         HStack(spacing: 3) {

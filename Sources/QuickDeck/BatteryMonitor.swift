@@ -6,13 +6,15 @@ final class BatteryMonitor: ObservableObject {
     @Published var level: Int?
     @Published var charging = false
 
-    private var timer: Timer?
+    private var timer: VisibilityAwareTimer?
 
     init() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
+        timer = VisibilityAwareTimer(
+            interval: 30,
+            onFire: { [weak self] in self?.refresh() },
+            onResume: { [weak self] in self?.refresh() }
+        )
     }
 
     func refresh() {

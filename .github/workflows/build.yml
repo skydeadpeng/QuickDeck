@@ -1,0 +1,32 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build QuickDeck.app
+        run: ./build.sh
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickDeck-macOS
+          path: build/QuickDeck.app
+
+      - name: Create release with app (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd build && zip -qry QuickDeck.app.zip QuickDeck.app
+          gh release create "${GITHUB_REF_NAME}" QuickDeck.app.zip \
+            --title "快捷台 QuickDeck ${GITHUB_REF_NAME}" \
+            --generate-notes

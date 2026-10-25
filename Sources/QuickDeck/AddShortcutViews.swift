@@ -35,6 +35,12 @@ enum WindowManager {
         }
     }
 
+    static func presentWeatherDetail(weather: WeatherModel) {
+        present(id: "weather", title: "天气 · 24 小时预报", size: NSSize(width: 300, height: 420)) {
+            WeatherDetailView(weather: weather)
+        }
+    }
+
     static func close(id: String) {
         panels[id]?.close()
         panels[id] = nil

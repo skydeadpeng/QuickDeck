@@ -11,15 +11,21 @@ final class SystemMonitor: ObservableObject {
     @Published private(set) var netInBytesPerSec: Double = 0
     @Published private(set) var netOutBytesPerSec: Double = 0
 
-    private var timer: Timer?
+    private var timer: VisibilityAwareTimer?
     private var lastCPU: (idle: UInt64, busy: UInt64)?
     private var lastNet: (inBytes: UInt64, outBytes: UInt64, at: Date)?
 
     init() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
+        timer = VisibilityAwareTimer(
+            interval: 2,
+            onFire: { [weak self] in self?.refresh() },
+            onResume: { [weak self] in
+                // 网速按差值计算，长时间暂停后旧基线会算出虚假低速，恢复时重置
+                self?.lastNet = nil
+                self?.refresh()
+            }
+        )
     }
 
     func refresh() {

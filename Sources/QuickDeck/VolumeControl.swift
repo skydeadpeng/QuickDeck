@@ -6,14 +6,16 @@ final class VolumeControl: ObservableObject {
     @Published var level = 0
     @Published var muted = false
 
-    private var timer: Timer?
+    private var timer: VisibilityAwareTimer?
 
     init() {
         refresh()
         // 其他途径（键盘、菜单栏）改了音量也能同步回来
-        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
+        timer = VisibilityAwareTimer(
+            interval: 10,
+            onFire: { [weak self] in self?.refresh() },
+            onResume: { [weak self] in self?.refresh() }
+        )
     }
 
     func refresh() {

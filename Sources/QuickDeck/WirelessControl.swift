@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import IOBluetooth
 import SwiftUI
 
 // MARK: - Wi-Fi 控制（networksetup，无需权限）
@@ -7,15 +8,18 @@ import SwiftUI
 final class WiFiControl: ObservableObject {
     @Published private(set) var isOn = false
     @Published private(set) var ssid: String?
+    @Published private(set) var ipAddress = "…"
     private(set) var device: String?
-    private var timer: Timer?
+    private var timer: VisibilityAwareTimer?
 
     init() {
         device = Self.discoverDevice()
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
+        timer = VisibilityAwareTimer(
+            interval: 10,
+            onFire: { [weak self] in self?.refresh() },
+            onResume: { [weak self] in self?.refresh() }
+        )
     }
 
     /// 从硬件端口列表里找到 Wi-Fi 对应的网卡名（en0 / en1…）
@@ -43,6 +47,17 @@ final class WiFiControl: ObservableObject {
            !name.isEmpty, !network.contains("You are not") {
             ssid = name
         }
+        refreshIP(device: device)
+    }
+
+    private func refreshIP(device: String) {
+        if let ip = runCommand("/usr/sbin/ipconfig", ["getifaddr", device]), !ip.isEmpty {
+            ipAddress = ip
+        } else if let ip = runCommand("/usr/sbin/ipconfig", ["getifaddr", "en1"]), !ip.isEmpty {
+            ipAddress = ip
+        } else {
+            ipAddress = "未获取到"
+        }
     }
 
     func toggle() {
@@ -52,69 +67,63 @@ final class WiFiControl: ObservableObject {
     }
 }
 
-// MARK: - 蓝牙控制（blueutil，brew 安装）
+// MARK: - 蓝牙控制（系统 IOBluetooth 框架，首次使用弹一次蓝牙授权）
+
+/// 新 SDK 未把这两个 C 函数暴露给 Swift，从框架里动态取符号（blueutil 内部用的同一组函数）
+private enum BluetoothPowerAPI {
+    private static let framework = dlopen(
+        "/System/Library/Frameworks/IOBluetooth.framework/IOBluetooth", RTLD_LAZY
+    )
+
+    static func get() -> Bool {
+        guard let symbol = dlsym(framework, "IOBluetoothPreferenceGetControllerPowerState") else { return false }
+        return unsafeBitCast(symbol, to: (@convention(c) () -> Bool).self)()
+    }
+
+    static func set(_ on: Bool) {
+        guard let symbol = dlsym(framework, "IOBluetoothPreferenceSetControllerPowerState") else { return }
+        unsafeBitCast(symbol, to: (@convention(c) (Bool) -> Void).self)(on)
+    }
+}
 
 final class BluetoothControl: ObservableObject {
-    enum InstallState { case installed, missing }
-
     @Published private(set) var isOn = false
     @Published private(set) var connectedNames: [String] = []
-    @Published private(set) var installState: InstallState = .missing
-    @Published private(set) var installing = false
+    /// 上次开关没有生效（多半是蓝牙权限没点允许）
+    @Published private(set) var toggleFailed = false
 
-    private var timer: Timer?
-
-    private static var blueutilPath: String? {
-        ["/opt/homebrew/bin/blueutil", "/usr/local/bin/blueutil"]
-            .first { FileManager.default.fileExists(atPath: $0) }
-    }
-
-    private static var brewPath: String? {
-        ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-            .first { FileManager.default.fileExists(atPath: $0) }
-    }
+    private var timer: VisibilityAwareTimer?
 
     init() {
-        installState = Self.blueutilPath == nil ? .missing : .installed
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
+        timer = VisibilityAwareTimer(
+            interval: 15,
+            onFire: { [weak self] in self?.refresh() },
+            onResume: { [weak self] in self?.refresh() }
+        )
     }
 
     func refresh() {
-        guard let path = Self.blueutilPath else { return }
-        if let power = runCommand(path, ["--power"]) {
-            isOn = power.contains("1")
-        }
+        isOn = BluetoothPowerAPI.get()
         var names: [String] = []
-        if let connected = runCommand(path, ["--connected"]) {
-            for line in connected.components(separatedBy: .newlines) {
-                guard let range = line.range(of: "\"[^\"]*\"", options: .regularExpression) else { continue }
-                let name = line[range].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-                if !name.isEmpty { names.append(name) }
+        if let devices = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] {
+            for device in devices where device.isConnected() {
+                if let name = device.name, !name.isEmpty {
+                    names.append(name)
+                }
             }
         }
         connectedNames = names
     }
 
     func toggle() {
-        guard let path = Self.blueutilPath else { return }
-        runCommand(path, ["--power", isOn ? "0" : "1"])
-        refresh()
-    }
-
-    /// 面板内一键安装 blueutil（约 150KB）
-    func installViaBrew() {
-        guard !installing, let brew = Self.brewPath else { return }
-        installing = true
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            _ = runCommand(brew, ["install", "blueutil"])
-            DispatchQueue.main.async {
-                self?.installing = false
-                self?.installState = Self.blueutilPath == nil ? .missing : .installed
-                self?.refresh()
-            }
+        let before = isOn
+        BluetoothPowerAPI.set(!before)
+        // 蓝牙控制器切换状态需要一点时间，稍等再核对结果
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self else { return }
+            self.refresh()
+            self.toggleFailed = (self.isOn == before)
         }
     }
 }
@@ -124,7 +133,6 @@ final class BluetoothControl: ObservableObject {
 struct NetworkSection: View {
     @ObservedObject var wifi: WiFiControl
     @ObservedObject var bluetooth: BluetoothControl
-    @State private var ipAddress = "…"
 
     var body: some View {
         VStack(spacing: 8) {
@@ -133,10 +141,6 @@ struct NetworkSection: View {
             ipRow
         }
         .padding(.horizontal, 2)
-        .onAppear { refreshIP() }
-        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
-            refreshIP()
-        }
     }
 
     private var wifiRow: some View {
@@ -166,29 +170,30 @@ struct NetworkSection: View {
                 .foregroundStyle(bluetooth.isOn ? Color.blue : Color.secondary)
             VStack(alignment: .leading, spacing: 0) {
                 Text("蓝牙").font(.system(size: 9)).foregroundStyle(.tertiary)
-                if bluetooth.installState == .installed {
+                if bluetooth.toggleFailed {
+                    HStack(spacing: 4) {
+                        Text("开关未生效：请允许蓝牙权限")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.orange)
+                        Button("去开启") {
+                            openSettingsPane("Bluetooth")
+                        }
+                        .buttonStyle(.link)
+                        .controlSize(.mini)
+                        .font(.system(size: 10))
+                    }
+                } else {
                     Text(bluetoothStatusText)
                         .font(.system(size: 11))
                         .lineLimit(1)
-                } else {
-                    Button {
-                        bluetooth.installViaBrew()
-                    } label: {
-                        Text(bluetooth.installing ? "正在安装 blueutil…" : "点此安装 blueutil 启用控制")
-                            .font(.system(size: 10))
-                    }
-                    .buttonStyle(.link)
-                    .controlSize(.mini)
-                    .disabled(bluetooth.installing)
                 }
             }
             Spacer()
-            if bluetooth.installState == .installed {
-                Toggle("", isOn: Binding(get: { bluetooth.isOn }, set: { _ in bluetooth.toggle() }))
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .labelsHidden()
-            }
+            Toggle("", isOn: Binding(get: { bluetooth.isOn }, set: { _ in bluetooth.toggle() }))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .labelsHidden()
+                .help("首次使用会弹一次蓝牙授权，点「允许」即可")
         }
     }
 
@@ -205,7 +210,7 @@ struct NetworkSection: View {
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 0) {
                 Text("IP 地址").font(.system(size: 9)).foregroundStyle(.tertiary)
-                Text(ipAddress)
+                Text(wifi.ipAddress)
                     .font(.system(size: 11, design: .monospaced))
             }
             Spacer()
@@ -228,16 +233,5 @@ struct NetworkSection: View {
 
     private func openSettingsPane(_ name: String) {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Library/PreferencePanes/\(name).prefPane"))
-    }
-
-    private func refreshIP() {
-        let device = wifi.device ?? "en0"
-        if let ip = runCommand("/usr/sbin/ipconfig", ["getifaddr", device]), !ip.isEmpty {
-            ipAddress = ip
-        } else if let ip = runCommand("/usr/sbin/ipconfig", ["getifaddr", "en1"]), !ip.isEmpty {
-            ipAddress = ip
-        } else {
-            ipAddress = "未获取到"
-        }
     }
 }

@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "QuickDeck",
-            path: "Sources/QuickDeck"
+            path: "Sources/QuickDeck",
+            linkerSettings: [.linkedFramework("IOBluetooth")]
         )
     ]
 )

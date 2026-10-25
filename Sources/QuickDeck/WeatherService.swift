@@ -13,10 +13,19 @@ struct WeatherNow: Codable, Hashable {
     var code: Int
 }
 
+struct HourForecast: Hashable, Identifiable {
+    let time: Date
+    let temperature: Int
+    let code: Int
+    var id: Date { time }
+}
+
 /// Open-Meteo 免费 API（无需 Key），结果缓存 30 分钟，断网时保留最后结果显示
 final class WeatherModel: ObservableObject {
     @Published private(set) var current: WeatherNow?
     @Published private(set) var city: SavedCity
+    @Published private(set) var hourly: [HourForecast] = []
+    @Published private(set) var hourlyUpdatedAt: Date?
 
     private let defaults = UserDefaults.standard
     private let cityKey = "deck.weather.city"
@@ -48,6 +57,8 @@ final class WeatherModel: ObservableObject {
             defaults.set(data, forKey: cityKey)
         }
         current = nil
+        hourly = []
+        hourlyUpdatedAt = nil
         Task { await refresh() }
     }
 
@@ -82,6 +93,47 @@ final class WeatherModel: ObservableObject {
             }
         } catch {
             // 网络失败：保留缓存显示，下次再试
+        }
+    }
+
+    /// 24 小时逐时预报（每 3 小时取一个点，紧凑显示），打开详情时拉取
+    func fetchHourly() async {
+        var comps = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
+        comps.queryItems = [
+            URLQueryItem(name: "latitude", value: String(city.lat)),
+            URLQueryItem(name: "longitude", value: String(city.lon)),
+            URLQueryItem(name: "hourly", value: "temperature_2m,weather_code"),
+            URLQueryItem(name: "forecast_days", value: "2"),
+            URLQueryItem(name: "timezone", value: "auto"),
+        ]
+        guard let url = comps.url else { return }
+        struct Response: Codable {
+            struct Hourly: Codable {
+                var time: [String]
+                var temperature_2m: [Double]
+                var weather_code: [Int]
+            }
+            var hourly: Hourly
+        }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let response = try JSONDecoder().decode(Response.self, from: data)
+            let formatter = ISO8601DateFormatter()
+            let now = Date().addingTimeInterval(-1800)
+            let all: [HourForecast] = zip(zip(response.hourly.time, response.hourly.temperature_2m),
+                                          response.hourly.weather_code).compactMap { pair, code in
+                guard let date = formatter.date(from: pair.0),
+                      date > now, date < now.addingTimeInterval(24 * 3600)
+                else { return nil }
+                return HourForecast(time: date, temperature: Int(pair.1.rounded()), code: code)
+            }
+            let sampled = Array(stride(from: 0, to: all.count, by: 3).map { all[$0] })
+            await MainActor.run {
+                hourly = sampled
+                hourlyUpdatedAt = Date()
+            }
+        } catch {
+            // 网络失败：保留旧数据
         }
     }
 

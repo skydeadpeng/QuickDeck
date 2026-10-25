@@ -7,6 +7,8 @@ extension Notification.Name {
     static let deckContentChanged = Notification.Name("deck.contentChanged")
     /// 界面请求隐藏面板（快捷键呼回）
     static let deckHidePanel = Notification.Name("deck.hidePanel")
+    /// 面板显示 / 隐藏变化，object 携带 Bool；隐藏时各监控暂停轮询省电
+    static let deckPanelVisibilityChanged = Notification.Name("deck.panelVisibilityChanged")
 }
 
 /// 常驻桌面的悬浮面板：无边框半透明、不抢焦点、所有空间和全屏下可见
@@ -93,13 +95,16 @@ final class PanelController: NSObject, NSWindowDelegate {
     func togglePanel() {
         if panel.isVisible {
             panel.orderOut(nil)
+            NotificationCenter.default.post(name: .deckPanelVisibilityChanged, object: false)
         } else {
             panel.orderFrontRegardless()
+            NotificationCenter.default.post(name: .deckPanelVisibilityChanged, object: true)
         }
     }
 
     func hidePanel() {
         panel.orderOut(nil)
+        NotificationCenter.default.post(name: .deckPanelVisibilityChanged, object: false)
     }
 
     /// v1.4 宽度档位升级：300/340/380 → 320/380/440，老用户一次性迁移
@@ -145,5 +150,42 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         UserDefaults.standard.set(NSStringFromPoint(panel.frame.origin), forKey: Self.positionKey)
+    }
+}
+
+/// 面板隐藏时自动暂停、显示时恢复并先跑一次的定时器（省电）
+final class VisibilityAwareTimer {
+    private var timer: Timer?
+    private let interval: TimeInterval
+    private let onFire: () -> Void
+    private let onResume: (() -> Void)?
+    private var startedOnce = false
+
+    init(interval: TimeInterval,
+         onFire: @escaping () -> Void,
+         onResume: (() -> Void)? = nil) {
+        self.interval = interval
+        self.onFire = onFire
+        self.onResume = onResume
+        start()
+        NotificationCenter.default.addObserver(
+            forName: .deckPanelVisibilityChanged, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let visible = note.object as? Bool else { return }
+            if visible { self?.start() } else { self?.stop() }
+        }
+    }
+
+    private func start() {
+        if startedOnce { onResume?() } else { startedOnce = true }
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.onFire()
+        }
+    }
+
+    private func stop() {
+        timer?.invalidate()
+        timer = nil
     }
 }
