@@ -23,6 +23,13 @@ struct DeckView: View {
     @AppStorage("deck.show.monitor") private var showMonitor = true
     @AppStorage("deck.show.network") private var showNetwork = true
     @AppStorage("deck.panel.width") private var panelWidth = 380
+    @AppStorage("deck.ui.scale") private var uiScale = 1.0
+    @AppStorage("deck.appgrid.iconsize") private var appIconSize = 40
+
+    /// 内容按此宽度布局，再整体缩放，最终视觉宽度恰好等于用户设定宽度
+    private var layoutWidth: CGFloat {
+        CGFloat(panelWidth) / max(0.5, uiScale)
+    }
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -81,7 +88,7 @@ struct DeckView: View {
             }
         }
         .padding(14)
-        .frame(width: CGFloat(panelWidth))
+        .frame(width: layoutWidth)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -97,6 +104,9 @@ struct DeckView: View {
         .onChange(of: showMonitor) { _, _ in notifySizeChanged() }
         .onChange(of: showNetwork) { _, _ in notifySizeChanged() }
         .onChange(of: panelWidth) { _, _ in notifySizeChanged() }
+        .onChange(of: uiScale) { _, _ in notifySizeChanged() }
+        .onChange(of: appIconSize) { _, _ in notifySizeChanged() }
+        .scaleEffect(max(0.5, uiScale), anchor: .topLeading)
 
     }
 
@@ -215,10 +225,10 @@ struct DeckView: View {
         searchText = ""
     }
 
-    // MARK: - App 网格（列数随面板宽度自适应：300→4 列，340/380→5 列）
+    // MARK: - App 网格（列数随面板宽度与图标大小自适应）
 
     private var appGridColumns: [GridItem] {
-        let count = max(4, Int((CGFloat(panelWidth) - 28) / 60))
+        let count = max(3, Int((layoutWidth - 28) / (CGFloat(appIconSize) + 22)))
         return Array(repeating: GridItem(.flexible(), spacing: 4), count: count)
     }
 
@@ -364,6 +374,7 @@ struct AppCell: View {
     let onOpen: () -> Void
     let onDelete: () -> Void
     @State private var hovering = false
+    @AppStorage("deck.appgrid.iconsize") private var iconSize = 40
 
     private var appExists: Bool {
         item.path.map { FileManager.default.fileExists(atPath: $0) } ?? false
@@ -375,7 +386,7 @@ struct AppCell: View {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: item.path ?? "/"))
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 38, height: 38)
+                    .frame(width: CGFloat(iconSize), height: CGFloat(iconSize))
                     .opacity(appExists ? 1 : 0.3)
                 if editing {
                     Image(systemName: "xmark.circle.fill")

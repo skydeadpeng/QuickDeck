@@ -68,6 +68,7 @@ final class ClipboardMonitor: ObservableObject {
 struct ClipboardSection: View {
     @ObservedObject var monitor: ClipboardMonitor
     @State private var copiedID: UUID?
+    @AppStorage("deck.clipboard.rows") private var visibleRows = 4
 
     var body: some View {
         VStack(spacing: 5) {
@@ -91,7 +92,7 @@ struct ClipboardSection: View {
                 .buttonStyle(.plain)
                 .disabled(monitor.items.isEmpty)
             }
-            ForEach(Array(monitor.items.prefix(4))) { item in
+            ForEach(Array(monitor.items.prefix(max(1, visibleRows)))) { item in
                 ClipboardRow(item: item, copied: copiedID == item.id) {
                     monitor.copy(item)
                     copiedID = item.id
