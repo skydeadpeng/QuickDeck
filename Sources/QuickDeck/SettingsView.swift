@@ -35,7 +35,7 @@ struct SettingsView: View {
 
             Section("显示内容") {
                 Toggle("系统监控（CPU / 内存 / 网速）", isOn: $showMonitor)
-                Toggle("无线网络（Wi-Fi / 蓝牙 / IP）", isOn: $showNetwork)
+                Toggle("网络与蓝牙（当前网络 / 蓝牙开关）", isOn: $showNetwork)
                 Toggle("剪贴板历史", isOn: $showClipboard)
                 Toggle("音量控制", isOn: $showVolume)
                 Toggle("便签", isOn: $showMemo)

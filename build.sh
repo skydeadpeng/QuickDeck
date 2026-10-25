@@ -21,8 +21,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleName</key>              <string>快捷台</string>
     <key>CFBundleDisplayName</key>       <string>快捷台</string>
     <key>CFBundleIdentifier</key>        <string>com.local.quickdeck</string>
-    <key>CFBundleVersion</key>           <string>7</string>
-    <key>CFBundleShortVersionString</key><string>1.5.1</string>
+    <key>CFBundleVersion</key>           <string>8</string>
+    <key>CFBundleShortVersionString</key><string>1.5.2</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
     <key>CFBundleExecutable</key>        <string>QuickDeck</string>
     <key>CFBundleDevelopmentRegion</key> <string>zh_CN</string>

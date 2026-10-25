@@ -8,7 +8,7 @@ let package = Package(
         .executableTarget(
             name: "QuickDeck",
             path: "Sources/QuickDeck",
-            linkerSettings: [.linkedFramework("IOBluetooth"), .linkedFramework("CoreWLAN")]
+            linkerSettings: [.linkedFramework("IOBluetooth")]
         )
     ]
 )

@@ -1,16 +1,13 @@
 import AppKit
 import Combine
-import CoreWLAN
 import Darwin
 import IOBluetooth
 import SwiftUI
 
-// MARK: - Wi-Fi / 网络状态控制（networksetup + CoreWLAN + 默认路由）
+// MARK: - 当前网络状态（默认路由接口 + 类型标签；macOS 14+ 下 SSID 探测会被打码误报，不用它）
 
 final class WiFiControl: ObservableObject {
-    @Published private(set) var isOn = false
-    @Published private(set) var ssid: String?
-    /// 当前真正上网用的接口（默认路由），比 SSID 探测可靠——macOS 14+ 无定位权限时 SSID 会被打码甚至误报未关联
+    /// 当前真正上网用的接口（默认路由出口）
     @Published private(set) var primaryInterface: String?
     @Published private(set) var primaryIP: String?
     @Published private(set) var primaryLabel = ""
@@ -28,7 +25,7 @@ final class WiFiControl: ObservableObject {
         )
     }
 
-    /// 从硬件端口列表里找到 Wi-Fi 对应的网卡名（en0 / en1…）
+    /// 从硬件端口列表里找到 Wi-Fi 对应的网卡名（en0 / en1…），用于接口类型标注
     private static func discoverDevice() -> String? {
         portMap()["Wi-Fi"]
     }
@@ -97,13 +94,6 @@ final class WiFiControl: ObservableObject {
 
     func refresh() {
         let ports = Self.portMap()
-        if let device {
-            if let power = runCommand("/usr/sbin/networksetup", ["-getairportpower", device]) {
-                isOn = power.contains("On")
-            }
-            // SSID：CoreWLAN 需要定位授权才给明文，拿不到就显示「已连接」
-            ssid = CWWiFiClient.shared().interface(withName: device)?.ssid()
-        }
         primaryInterface = Self.defaultInterface()
         if let primary = primaryInterface {
             primaryIP = Self.ipv4(of: primary)
@@ -112,18 +102,6 @@ final class WiFiControl: ObservableObject {
             primaryIP = nil
             primaryLabel = ""
         }
-    }
-
-    /// Wi-Fi 是否真实在用（默认路由走 Wi-Fi 网卡），不受 SSID 打码影响
-    var isActuallyConnected: Bool {
-        guard let device else { return false }
-        return primaryInterface == device
-    }
-
-    func toggle() {
-        guard let device else { return }
-        runCommand("/usr/sbin/networksetup", ["-setairportpower", device, isOn ? "off" : "on"])
-        refresh()
     }
 }
 
@@ -196,38 +174,10 @@ struct NetworkSection: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            wifiRow
             bluetoothRow
             ipRow
         }
         .padding(.horizontal, 2)
-    }
-
-    private var wifiRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "wifi")
-                .font(.system(size: 12))
-                .foregroundStyle(wifi.isOn ? Color.blue : Color.secondary)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Wi-Fi").font(.system(size: 9)).foregroundStyle(.tertiary)
-                Text(wifiStatusText)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-            }
-            Spacer()
-            Toggle("", isOn: Binding(get: { wifi.isOn }, set: { _ in wifi.toggle() }))
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .labelsHidden()
-                .help(wifi.device.map { "网卡 \($0)" } ?? "")
-        }
-    }
-
-    /// 按真实在用状态显示；SSID 名称受系统隐私限制（需定位授权），拿不到时显示「已连接」
-    private var wifiStatusText: String {
-        guard wifi.isOn else { return "已关闭" }
-        if let name = wifi.ssid { return name }
-        return wifi.isActuallyConnected ? "已连接" : "已开启 · 未连接"
     }
 
     private var bluetoothRow: some View {
