@@ -1,14 +1,20 @@
 import AppKit
 import Combine
+import CoreWLAN
+import Darwin
 import IOBluetooth
 import SwiftUI
 
-// MARK: - Wi-Fi 控制（networksetup，无需权限）
+// MARK: - Wi-Fi / 网络状态控制（networksetup + CoreWLAN + 默认路由）
 
 final class WiFiControl: ObservableObject {
     @Published private(set) var isOn = false
     @Published private(set) var ssid: String?
-    @Published private(set) var ipAddress = "…"
+    /// 当前真正上网用的接口（默认路由），比 SSID 探测可靠——macOS 14+ 无定位权限时 SSID 会被打码甚至误报未关联
+    @Published private(set) var primaryInterface: String?
+    @Published private(set) var primaryIP: String?
+    @Published private(set) var primaryLabel = ""
+
     private(set) var device: String?
     private var timer: VisibilityAwareTimer?
 
@@ -16,7 +22,7 @@ final class WiFiControl: ObservableObject {
         device = Self.discoverDevice()
         refresh()
         timer = VisibilityAwareTimer(
-            interval: 10,
+            interval: 5,
             onFire: { [weak self] in self?.refresh() },
             onResume: { [weak self] in self?.refresh() }
         )
@@ -24,40 +30,94 @@ final class WiFiControl: ObservableObject {
 
     /// 从硬件端口列表里找到 Wi-Fi 对应的网卡名（en0 / en1…）
     private static func discoverDevice() -> String? {
-        guard let output = runCommand("/usr/sbin/networksetup", ["-listallhardwareports"]) else { return nil }
-        let lines = output.components(separatedBy: .newlines)
-        for (index, line) in lines.enumerated() where line.contains("Hardware Port: Wi-Fi") {
-            for follow in lines[(index + 1)...].prefix(3) where follow.contains("Device:") {
-                return follow.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces)
+        portMap()["Wi-Fi"]
+    }
+
+    /// device → 硬件端口名 映射（含 iPhone USB / 以太网 / 雷电网桥等）
+    private static func portMap() -> [String: String] {
+        guard let output = runCommand("/usr/sbin/networksetup", ["-listallhardwareports"]) else { return [:] }
+        var map: [String: String] = [:]
+        var currentPort: String?
+        for line in output.components(separatedBy: .newlines) {
+            if let range = line.range(of: "Hardware Port: (.+)", options: .regularExpression) {
+                currentPort = String(line[range].dropFirst("Hardware Port: ".count)).trimmingCharacters(in: .whitespaces)
+            } else if let range = line.range(of: "Device: (\\S+)", options: .regularExpression),
+                      let port = currentPort {
+                map[String(line[range].dropFirst("Device: ".count))] = port
+            }
+        }
+        return map
+    }
+
+    /// 真正在用的网络接口 = 默认路由出口
+    private static func defaultInterface() -> String? {
+        guard let output = runCommand("/sbin/route", ["-n", "get", "default"]) else { return nil }
+        for line in output.components(separatedBy: .newlines) {
+            if let range = line.range(of: "interface: \\S+", options: .regularExpression) {
+                return String(line[range].dropFirst("interface: ".count))
             }
         }
         return nil
     }
 
-    func refresh() {
-        guard let device else { return }
-        if let power = runCommand("/usr/sbin/networksetup", ["-getairportpower", device]) {
-            isOn = power.contains("On")
+    /// getifaddrs 直读某接口 IPv4，不依赖子进程
+    private static func ipv4(of name: String) -> String? {
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return nil }
+        defer { freeifaddrs(ifaddr) }
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = cursor {
+            let interface = current.pointee
+            if String(cString: interface.ifa_name) == name,
+               let sockaddr = interface.ifa_addr,
+               sockaddr.pointee.sa_family == UInt8(AF_INET) {
+                var address = sockaddr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+                var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                if inet_ntop(AF_INET, &address.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil {
+                    return String(cString: buffer)
+                }
+            }
+            cursor = interface.ifa_next
         }
-        ssid = nil
-        if isOn,
-           let network = runCommand("/usr/sbin/networksetup", ["-getairportnetwork", device]),
-           !network.contains("not associated"),
-           let name = network.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces),
-           !name.isEmpty, !network.contains("You are not") {
-            ssid = name
-        }
-        refreshIP(device: device)
+        return nil
     }
 
-    private func refreshIP(device: String) {
-        if let ip = runCommand("/usr/sbin/ipconfig", ["getifaddr", device]), !ip.isEmpty {
-            ipAddress = ip
-        } else if let ip = runCommand("/usr/sbin/ipconfig", ["getifaddr", "en1"]), !ip.isEmpty {
-            ipAddress = ip
-        } else {
-            ipAddress = "未获取到"
+    private static func interfaceLabel(interface: String, wifiDevice: String?, ports: [String: String]) -> String {
+        if interface == wifiDevice { return "Wi-Fi" }
+        let port = ports[interface] ?? interface
+        if port.contains("iPhone") { return "iPhone USB 共享" }
+        if port.contains("iPad") { return "iPad USB 共享" }
+        if port.contains("Bluetooth") { return "蓝牙网络" }
+        if port.contains("Thunderbolt") { return "雷电网桥" }
+        if port.contains("Ethernet") || port.contains("适配器") || port.contains("USB") { return "以太网" }
+        if interface.hasPrefix("utun") { return "VPN" }
+        if interface.hasPrefix("bridge") { return "网桥" }
+        return port
+    }
+
+    func refresh() {
+        let ports = Self.portMap()
+        if let device {
+            if let power = runCommand("/usr/sbin/networksetup", ["-getairportpower", device]) {
+                isOn = power.contains("On")
+            }
+            // SSID：CoreWLAN 需要定位授权才给明文，拿不到就显示「已连接」
+            ssid = CWWiFiClient.shared().interface(withName: device)?.ssid()
         }
+        primaryInterface = Self.defaultInterface()
+        if let primary = primaryInterface {
+            primaryIP = Self.ipv4(of: primary)
+            primaryLabel = Self.interfaceLabel(interface: primary, wifiDevice: device, ports: ports)
+        } else {
+            primaryIP = nil
+            primaryLabel = ""
+        }
+    }
+
+    /// Wi-Fi 是否真实在用（默认路由走 Wi-Fi 网卡），不受 SSID 打码影响
+    var isActuallyConnected: Bool {
+        guard let device else { return false }
+        return primaryInterface == device
     }
 
     func toggle() {
@@ -150,7 +210,7 @@ struct NetworkSection: View {
                 .foregroundStyle(wifi.isOn ? Color.blue : Color.secondary)
             VStack(alignment: .leading, spacing: 0) {
                 Text("Wi-Fi").font(.system(size: 9)).foregroundStyle(.tertiary)
-                Text(wifi.isOn ? (wifi.ssid ?? "已开启 · 未连接无线") : "已关闭")
+                Text(wifiStatusText)
                     .font(.system(size: 11))
                     .lineLimit(1)
             }
@@ -161,6 +221,13 @@ struct NetworkSection: View {
                 .labelsHidden()
                 .help(wifi.device.map { "网卡 \($0)" } ?? "")
         }
+    }
+
+    /// 按真实在用状态显示；SSID 名称受系统隐私限制（需定位授权），拿不到时显示「已连接」
+    private var wifiStatusText: String {
+        guard wifi.isOn else { return "已关闭" }
+        if let name = wifi.ssid { return name }
+        return wifi.isActuallyConnected ? "已连接" : "已开启 · 未连接"
     }
 
     private var bluetoothRow: some View {
@@ -209,9 +276,16 @@ struct NetworkSection: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 0) {
-                Text("IP 地址").font(.system(size: 9)).foregroundStyle(.tertiary)
-                Text(wifi.ipAddress)
-                    .font(.system(size: 11, design: .monospaced))
+                Text("当前网络").font(.system(size: 9)).foregroundStyle(.tertiary)
+                if let ip = wifi.primaryIP, let interface = wifi.primaryInterface {
+                    Text("\(ip) · \(wifi.primaryLabel.isEmpty ? interface : wifi.primaryLabel)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .lineLimit(1)
+                } else {
+                    Text("未连接网络")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
             }
             Spacer()
             Button {
