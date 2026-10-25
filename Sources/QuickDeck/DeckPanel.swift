@@ -141,17 +141,14 @@ final class PanelController: NSObject, NSWindowDelegate {
     private func fitToContent() {
         DispatchQueue.main.async { [panel] in
             guard let hosting = panel.contentView as? NSHostingView<DeckView> else { return }
-            let defaults = UserDefaults.standard
-            var width = defaults.integer(forKey: "deck.panel.width")
+            var width = UserDefaults.standard.integer(forKey: "deck.panel.width")
             if width < 280 { width = 380 }
-            var scale = defaults.double(forKey: "deck.ui.scale")
-            if scale < 0.5 || scale > 2 { scale = 1 }
             hosting.layoutSubtreeIfNeeded()
             let measured = hosting.fittingSize
-            guard measured.width > 10, measured.height > 10 else { return }
-            // 先按 SwiftUI 布局量高度，再断开 intrinsic 约束，避免窗口被拽回未缩放尺寸
+            guard measured.height > 10 else { return }
+            // 断开 intrinsic 约束，让窗口尺寸完全由面板宽度设置决定
             if !hosting.sizingOptions.isEmpty { hosting.sizingOptions = [] }
-            panel.setContentSize(NSSize(width: CGFloat(width), height: measured.height * CGFloat(scale)))
+            panel.setContentSize(NSSize(width: CGFloat(width), height: measured.height))
         }
     }
 

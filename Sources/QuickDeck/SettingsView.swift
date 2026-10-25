@@ -16,8 +16,7 @@ struct SettingsView: View {
     @AppStorage("deck.show.monitor") private var showMonitor = true
     @AppStorage("deck.show.network") private var showNetwork = true
     @AppStorage("deck.panel.width") private var panelWidth = 380
-    @AppStorage("deck.ui.scale") private var uiScale = 1.0
-    @AppStorage("deck.appgrid.iconsize") private var appIconSize = 40
+    @AppStorage("deck.appgrid.iconsize") private var appIconSize = 38
     @AppStorage("deck.clipboard.rows") private var clipboardRows = 4
     @State private var query = ""
     @State private var results: [SavedCity] = []
@@ -45,30 +44,13 @@ struct SettingsView: View {
                 Toggle("农历日期", isOn: $showLunar)
             }
 
-            Section("面板尺寸") {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("宽度")
-                        Spacer()
-                        Text("\(panelWidth) pt").monospacedDigit().foregroundStyle(.secondary)
-                    }
-                    Slider(
-                        value: Binding(
-                            get: { Double(panelWidth) },
-                            set: { panelWidth = Int($0) }
-                        ),
-                        in: 280...560,
-                        step: 10
-                    )
+            Section("面板宽度") {
+                Picker("宽度", selection: $panelWidth) {
+                    Text("紧凑 320").tag(320)
+                    Text("标准 380").tag(380)
+                    Text("宽敞 440").tag(440)
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("界面缩放")
-                        Spacer()
-                        Text("\(Int(uiScale * 100)) %").monospacedDigit().foregroundStyle(.secondary)
-                    }
-                    Slider(value: $uiScale, in: 0.85...1.3, step: 0.05)
-                }
+                .pickerStyle(.segmented)
                 Text("高度由开启的组件数量决定，在「显示内容」里增减即可")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -76,9 +58,9 @@ struct SettingsView: View {
 
             Section("组件定制") {
                 Picker("App 图标大小", selection: $appIconSize) {
-                    Text("小").tag(34)
-                    Text("中").tag(40)
-                    Text("大").tag(48)
+                    Text("小").tag(32)
+                    Text("中").tag(38)
+                    Text("大").tag(46)
                 }
                 .pickerStyle(.segmented)
                 Picker("剪贴板显示条数", selection: $clipboardRows) {
