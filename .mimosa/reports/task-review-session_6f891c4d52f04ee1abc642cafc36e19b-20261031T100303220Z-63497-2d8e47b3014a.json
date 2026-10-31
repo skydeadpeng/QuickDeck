@@ -1,0 +1,169 @@
+{
+  "schema_version": "mimosa-task-review/v2",
+  "run_id": "20261031T100303220Z-63497-2d8e47b3014a",
+  "run_status": "inconclusive",
+  "errors": [
+    {
+      "stage": "baseline",
+      "target": ".",
+      "reason": "baseline_partial: baseline capture had enumeration or snapshot errors"
+    }
+  ],
+  "coverage": {
+    "schema_version": "mimosa-hook-coverage/v1",
+    "status": "partial",
+    "scope": "hook_observed_diff",
+    "baseline": {
+      "complete": false,
+      "captured_files": 1,
+      "candidate_limit": 5000,
+      "truncated": false,
+      "enumeration_error_count": 0,
+      "snapshot_error_count": 0,
+      "compensated_target_count": 1
+    },
+    "change_tracking": {
+      "touched_observed": 1,
+      "touched_retained": 1,
+      "truncated": false,
+      "bash_mutation": true,
+      "bash_discovered": 1,
+      "bash_discovery_limit": 80,
+      "bash_discovery_truncated": false
+    },
+    "candidates": {
+      "eligible_files": 1,
+      "selected_files": 1,
+      "limit": 20,
+      "truncated": false
+    },
+    "scanning": {
+      "required_files": 1,
+      "scanned_files": 1,
+      "skipped_files": 0,
+      "failed_files": 0,
+      "project_checks_required": 0,
+      "project_checks_completed": 0
+    },
+    "notification": {
+      "eligible_findings": 0,
+      "detailed_findings": 0,
+      "detail_limit": 3,
+      "truncated": false
+    },
+    "reason_counts": {
+      "baseline_partial": 1,
+      "project_check_failed": 1
+    },
+    "reasons": [
+      {
+        "code": "baseline_partial",
+        "stage": "baseline",
+        "target": ".",
+        "detail": "baseline capture had enumeration or snapshot errors",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "baseline",
+        "target": ".",
+        "detail": "baseline_partial: baseline capture had enumeration or snapshot errors",
+        "affects_completion": true
+      }
+    ],
+    "reasons_truncated": false
+  },
+  "generated_at": "2026-10-31T10:03:03.220Z",
+  "session_id": "session_6f891c4d52f04ee1abc642cafc36e19b",
+  "target": ".",
+  "revision": "bcca57c83f7dda4c687f84f33771161b4e70f62a",
+  "rules_version": "unavailable",
+  "diff_hash": "879109bd3f7cdd5a1e82bd2cc86dcf8d483b3fbfd7656188e019b49b98ffcd0a",
+  "diff": {
+    "algorithm": "sha256",
+    "changed_file_count": 1,
+    "changed_files": [
+      {
+        "file": "build.sh",
+        "ranges": [
+          {
+            "start": 15,
+            "end": 15
+          }
+        ],
+        "before_hash": "f2864e5b0ebe4fa6910ad0d1bb404a9c8591f0db9da5a35df59c34271ab24327",
+        "after_hash": "dd489264bbba7f597287fde80adbb0eb29cb995a4a49a2d91ae422e6bb21e41a"
+      }
+    ]
+  },
+  "timing": {
+    "started_at": "2026-10-31T10:03:02.550Z",
+    "completed_at": "2026-10-31T10:03:03.220Z",
+    "duration_ms": 670,
+    "measurement": "hook_wall_clock"
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "model_calls": 0,
+    "measurement": "known-zero"
+  },
+  "telemetry": {
+    "schemaVersion": "mimosa-gate-telemetry/v1",
+    "profile": "gate",
+    "operation": "Stop",
+    "outcome": "partial/INCONCLUSIVE",
+    "latencyMs": 670,
+    "peakMemoryBytes": 169771008,
+    "memoryMeasurement": "max-observed-process-rss",
+    "scannedFiles": 1,
+    "cache": {
+      "hits": 0,
+      "misses": 0,
+      "measurement": "not-applicable"
+    },
+    "denyCount": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0,
+      "modelCalls": 0,
+      "measurement": "known-zero"
+    }
+  },
+  "finding_count": 0,
+  "rewake_finding_count": 0,
+  "evidence_boundary": {
+    "scan": "candidate",
+    "static_fix_verification": "observed_static_only",
+    "runtime_verification": "not_performed"
+  },
+  "finding_events": [
+    {
+      "finding_id": "mimosa-1ec9f3642e741d195456fe75",
+      "file": "build.sh",
+      "line": 2,
+      "rule_id": "security",
+      "severity": "medium",
+      "category": "命令注入",
+      "status": "candidate",
+      "decision": "advisory",
+      "at": "2026-10-31T09:33:58.637Z",
+      "evidence": {
+        "kind": "source",
+        "boundary": "candidate",
+        "producer": "deterministic",
+        "source": "semgrep",
+        "evidence_hash": "28a6c04b8936772b57cd91984ca52ff1d04aa595cc4ddd27a805c73b700534de",
+        "runtime_oracle": false
+      }
+    }
+  ],
+  "findings": [],
+  "artifacts": {
+    "immutable_report": ".mimosa/reports/task-review-session_6f891c4d52f04ee1abc642cafc36e19b-20261031T100303220Z-63497-2d8e47b3014a.json",
+    "latest_report": ".mimosa/reports/task-review-session_6f891c4d52f04ee1abc642cafc36e19b.json",
+    "history_summary": ".mimosa/history/run-20261031T100303220Z-63497-2d8e47b3014a.json"
+  }
+}

@@ -5,8 +5,8 @@
     <key>CFBundleName</key>              <string>快捷台</string>
     <key>CFBundleDisplayName</key>       <string>快捷台</string>
     <key>CFBundleIdentifier</key>        <string>com.local.quickdeck</string>
-    <key>CFBundleVersion</key>           <string>11</string>
-    <key>CFBundleShortVersionString</key><string>1.6.2</string>
+    <key>CFBundleVersion</key>           <string>12</string>
+    <key>CFBundleShortVersionString</key><string>1.7.0</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
     <key>CFBundleExecutable</key>        <string>QuickDeck</string>
     <key>CFBundleDevelopmentRegion</key> <string>zh_CN</string>

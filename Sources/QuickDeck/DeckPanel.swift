@@ -9,6 +9,8 @@ extension Notification.Name {
     static let deckHidePanel = Notification.Name("deck.hidePanel")
     /// 面板显示 / 隐藏变化，object 携带 Bool；隐藏时各监控暂停轮询省电
     static let deckPanelVisibilityChanged = Notification.Name("deck.panelVisibilityChanged")
+    /// 热键请求聚焦搜索框
+    static let deckFocusSearch = Notification.Name("deck.focusSearch")
 }
 
 /// 常驻桌面的悬浮面板：无边框半透明、不抢焦点、所有空间和全屏下可见
@@ -90,9 +92,32 @@ final class PanelController: NSObject, NSWindowDelegate {
             forName: .deckHidePanel, object: nil, queue: .main
         ) { [weak self] _ in self?.hidePanel() }
 
-        // 全局快捷键：显示 / 隐藏面板
-        HotkeyManager.shared.onTrigger = { [weak self] in
-            self?.togglePanel()
+        // 全局快捷键：按绑定动作分发
+        HotkeyManager.shared.performAction = { [weak self] action in
+            guard let self else { return }
+            switch action {
+            case .togglePanel:
+                self.togglePanel()
+            case .focusSearch:
+                if !self.panel.isVisible {
+                    self.togglePanel()
+                }
+                NSApp.activate(ignoringOtherApps: true)
+                self.panel.makeKey()
+                NotificationCenter.default.post(name: .deckFocusSearch, object: nil)
+            case .screenshot:
+                SystemActions.action("screenshot")?.run()
+            case .lock:
+                SystemActions.action("lock")?.run()
+            case .clipboardHistory:
+                WindowManager.presentClipboardHistory(monitor: self.clipboard)
+            case .clearClipboard:
+                SystemActions.action("clearclip")?.run()
+            case .darkMode:
+                SystemActions.action("darkmode")?.run()
+            case .mute:
+                SystemActions.action("mute")?.run()
+            }
         }
     }
 

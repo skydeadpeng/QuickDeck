@@ -15,6 +15,7 @@ struct DeckView: View {
     @State private var searchText = ""
     @State private var allApps: [InstalledApp] = []
     @State private var draggingID: UUID?
+    @FocusState private var searchFocused: Bool
 
     @AppStorage("deck.show.clipboard") private var showClipboard = true
     @AppStorage("deck.show.volume") private var showVolume = true
@@ -51,36 +52,15 @@ struct DeckView: View {
             }
             searchBar
             if searchText.isEmpty {
-                if !store.appItems.isEmpty || editMode {
-                    sectionDivider
-                    appGrid
-                }
-                if !store.actionItems.isEmpty || editMode {
-                    sectionDivider
-                    actionGrid
-                }
-                if !store.linkItems.isEmpty || editMode {
-                    sectionDivider
-                    linkGrid
-                }
-                if showVolume {
-                    sectionDivider
-                    VolumeRow(control: volume)
-                }
-                if showClipboard {
-                    sectionDivider
-                    ClipboardSection(monitor: clipboard)
-                }
-                if showMemo {
-                    sectionDivider
-                    MemoSection()
-                }
+                normalSections
             } else {
                 SearchResultsView(store: store, query: searchText, allApps: allApps) {
                     searchText = ""
                 }
             }
         }
+        .onChange(of: editMode) { _, _ in notifySizeChanged() }
+        .onChange(of: searchText) { _, _ in notifySizeChanged() }
         .padding(14)
         .frame(width: CGFloat(panelWidth))
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -90,16 +70,40 @@ struct DeckView: View {
         )
         .contextMenu { contextMenu }
         .onAppear { allApps = AppScanner.scan() }
-        .onChange(of: editMode) { _, _ in notifySizeChanged() }
-        .onChange(of: searchText) { _, _ in notifySizeChanged() }
-        .onChange(of: showClipboard) { _, _ in notifySizeChanged() }
-        .onChange(of: showVolume) { _, _ in notifySizeChanged() }
-        .onChange(of: showMemo) { _, _ in notifySizeChanged() }
-        .onChange(of: showMonitor) { _, _ in notifySizeChanged() }
-        .onChange(of: showNetwork) { _, _ in notifySizeChanged() }
-        .onChange(of: panelWidth) { _, _ in notifySizeChanged() }
-        .onChange(of: appIconSize) { _, _ in notifySizeChanged() }
+        .onReceive(NotificationCenter.default.publisher(for: .deckFocusSearch)) { _ in
+            searchFocused = true
+        }
+        .modifier(PanelSizeObserver())
+    }
 
+    /// 非搜索态的全部区块（拆分出来避免 body 类型检查超时）
+    private var normalSections: some View {
+        VStack(spacing: 11) {
+            if !store.appItems.isEmpty || editMode {
+                sectionDivider
+                appGrid
+            }
+            if !store.actionItems.isEmpty || editMode {
+                sectionDivider
+                actionGrid
+            }
+            if !store.linkItems.isEmpty || editMode {
+                sectionDivider
+                linkGrid
+            }
+            if showVolume {
+                sectionDivider
+                VolumeRow(control: volume)
+            }
+            if showClipboard {
+                sectionDivider
+                ClipboardSection(monitor: clipboard)
+            }
+            if showMemo {
+                sectionDivider
+                MemoSection()
+            }
+        }
     }
 
     private func notifySizeChanged() {
@@ -154,7 +158,7 @@ struct DeckView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("隐藏面板（按 \(HotkeyManager.shared.currentTitle) 呼回）")
+                    .help("隐藏面板（按 \(HotkeyManager.shared.togglePanelComboText) 呼回）")
 
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { editMode.toggle() }
@@ -180,6 +184,7 @@ struct DeckView: View {
             TextField("搜索 App / 功能，或输入 12*8 算式", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
+                .focused($searchFocused)
                 .onSubmit { submitSearch() }
             if !searchText.isEmpty {
                 Button {
@@ -296,7 +301,7 @@ struct DeckView: View {
         Button("添加系统功能…") { WindowManager.presentActionPicker(store: store) }
         Divider()
         Button("设置…") { WindowManager.presentSettings(store: store, weather: weather) }
-        Button("隐藏面板（\(HotkeyManager.shared.currentTitle) 呼回）") {
+        Button("隐藏面板（\(HotkeyManager.shared.togglePanelComboText) 呼回）") {
             NotificationCenter.default.post(name: .deckHidePanel, object: nil)
         }
         Button("退出 快捷台") { NSApp.terminate(nil) }
@@ -533,5 +538,31 @@ struct WiggleModifier: ViewModifier {
 extension View {
     func wiggle(active: Bool) -> some View {
         modifier(WiggleModifier(active: active))
+    }
+}
+
+/// 监听所有影响面板高度的设置项变化，通知窗口重新贴齐
+private struct PanelSizeObserver: ViewModifier {
+    @AppStorage("deck.show.clipboard") private var showClipboard = true
+    @AppStorage("deck.show.volume") private var showVolume = true
+    @AppStorage("deck.show.memo") private var showMemo = false
+    @AppStorage("deck.show.monitor") private var showMonitor = true
+    @AppStorage("deck.show.network") private var showNetwork = true
+    @AppStorage("deck.panel.width") private var panelWidth = 380
+    @AppStorage("deck.appgrid.iconsize") private var appIconSize = 38
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: showClipboard) { _, _ in post() }
+            .onChange(of: showVolume) { _, _ in post() }
+            .onChange(of: showMemo) { _, _ in post() }
+            .onChange(of: showMonitor) { _, _ in post() }
+            .onChange(of: showNetwork) { _, _ in post() }
+            .onChange(of: panelWidth) { _, _ in post() }
+            .onChange(of: appIconSize) { _, _ in post() }
+    }
+
+    private func post() {
+        NotificationCenter.default.post(name: .deckContentChanged, object: nil)
     }
 }

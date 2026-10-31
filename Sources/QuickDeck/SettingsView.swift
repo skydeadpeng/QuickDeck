@@ -1,12 +1,13 @@
+import Carbon.HIToolbox
 import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var store: ShortcutStore
     @ObservedObject var weather: WeatherModel
+    @ObservedObject private var hotkeys = HotkeyManager.shared
 
     @State private var loginItemOn = SMAppService.mainApp.status == .enabled
-    @State private var hotkeyIndex = HotkeyManager.shared.currentIndex
     @State private var message: String?
 
     @AppStorage("deck.show.clipboard") private var showClipboard = true
@@ -82,21 +83,29 @@ struct SettingsView: View {
                 }
             }
 
-            Section("快捷键") {
-                Picker("显示 / 隐藏面板", selection: $hotkeyIndex) {
-                    ForEach(HotkeyManager.presets.indices, id: \.self) { index in
-                        Text(HotkeyManager.presets[index].title).tag(index)
+            Section("快捷键（最多 \(HotkeyManager.maxSlots) 个，任意组合）") {
+                ForEach(hotkeys.bindings.indices, id: \.self) { index in
+                    HotkeySlotRow(index: index)
+                }
+                if hotkeys.bindings.count < HotkeyManager.maxSlots {
+                    Menu {
+                        ForEach(HotkeyAction.allCases) { action in
+                            Button(action.title) {
+                                hotkeys.appendBinding(action: action)
+                            }
+                        }
+                    } label: {
+                        Label("添加快捷键…", systemImage: "plus.circle")
                     }
                 }
-                .pickerStyle(.menu)
-                .onChange(of: hotkeyIndex) { _, index in
-                    HotkeyManager.shared.currentIndex = index
-                }
-                if HotkeyManager.shared.lastStatus != noErr {
-                    Label("快捷键注册失败，可能与其他软件冲突，请换一个组合试试", systemImage: "exclamationmark.triangle")
+                if let error = hotkeys.lastError {
+                    Label(error, systemImage: "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
+                Text("点右侧按钮后直接按下想要的组合（如 ⌥C、⌘⇧K、F8），Esc 取消；建议至少保留一个「显示 / 隐藏面板」")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
 
             Section("天气城市（当前：\(weather.cityLabel)）") {
@@ -166,5 +175,116 @@ struct SettingsView: View {
             guard !Task.isCancelled else { return }
             await MainActor.run { results = found }
         }
+    }
+}
+
+// MARK: - 快捷键槽位与录制器
+
+struct HotkeySlotRow: View {
+    @ObservedObject private var hotkeys = HotkeyManager.shared
+    let index: Int
+
+    var body: some View {
+        let binding = hotkeys.bindings[index]
+        HStack(spacing: 10) {
+            Picker("动作", selection: actionSelection) {
+                ForEach(HotkeyAction.allCases) { action in
+                    Text(action.title).tag(action)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(maxWidth: 158, alignment: .leading)
+            Spacer(minLength: 0)
+            HotkeyRecorder(text: HotkeyManager.comboText(binding)) { keyCode, modifiers in
+                hotkeys.setBinding(index, HotkeyBinding(
+                    action: binding.action,
+                    keyCode: keyCode,
+                    modifiers: modifiers
+                ))
+            }
+            Button {
+                hotkeys.removeBinding(at: index)
+            } label: {
+                Image(systemName: "minus.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("删除该快捷键")
+        }
+    }
+
+    private var actionSelection: Binding<HotkeyAction> {
+        Binding(
+            get: { hotkeys.bindings[index].action },
+            set: { action in
+                hotkeys.setBinding(index, HotkeyBinding(
+                    action: action,
+                    keyCode: hotkeys.bindings[index].keyCode,
+                    modifiers: hotkeys.bindings[index].modifiers
+                ))
+            }
+        )
+    }
+}
+
+struct HotkeyRecorder: View {
+    let text: String
+    let onRecord: (Int, Int) -> Void
+    @State private var recording = false
+    @State private var monitor: Any?
+    @State private var hint: String?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Button {
+                if recording { stop() } else { start() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: recording ? "record.circle" : "keyboard")
+                    Text(recording ? "按下组合键…" : text)
+                }
+                .frame(minWidth: 100)
+            }
+            if let hint {
+                Text(hint)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func start() {
+        recording = true
+        hint = nil
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            handleKey(event)
+            return nil // 录制期间拦截按键，不透传给其他控件
+        }
+    }
+
+    private func stop() {
+        recording = false
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    private func handleKey(_ event: NSEvent) {
+        if event.keyCode == UInt16(kVK_Escape) {
+            stop()
+            return
+        }
+        let keyCode = Int(event.keyCode)
+        let modifiers = HotkeyManager.carbonFlags(event.modifierFlags)
+        let name = HotkeyManager.keyName(keyCode)
+        let digits = name.dropFirst()
+        let isFunctionKey = name.count >= 2 && name.first == "F" && digits.allSatisfy(\.isNumber)
+        // 至少一个主要修饰键（⌘⌥⌃），或单独的功能键
+        if modifiers & (cmdKey | optionKey | controlKey) == 0 && !isFunctionKey {
+            hint = "需含 ⌘/⌥/⌃ 或用功能键"
+            return
+        }
+        stop()
+        onRecord(keyCode, modifiers)
     }
 }
