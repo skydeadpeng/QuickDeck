@@ -12,33 +12,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp .build/release/QuickDeck "$APP/Contents/MacOS/QuickDeck"
 chmod +x "$APP/Contents/MacOS/QuickDeck"
-
-cat > "$APP/Contents/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>              <string>快捷台</string>
-    <key>CFBundleDisplayName</key>       <string>快捷台</string>
-    <key>CFBundleIdentifier</key>        <string>com.local.quickdeck</string>
-    <key>CFBundleVersion</key>           <string>10</string>
-    <key>CFBundleShortVersionString</key><string>1.6.1</string>
-    <key>CFBundlePackageType</key>       <string>APPL</string>
-    <key>CFBundleExecutable</key>        <string>QuickDeck</string>
-    <key>CFBundleDevelopmentRegion</key> <string>zh_CN</string>
-    <key>LSMinimumSystemVersion</key>    <string>14.0</string>
-    <key>LSUIElement</key>               <true/>
-    <key>NSHighResolutionCapable</key>   <true/>
-    <key>NSPrincipalClass</key>          <string>NSApplication</string>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>「快捷台」使用自动化权限来切换深色/浅色模式等系统设置。</string>
-    <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>「快捷台」使用蓝牙权限来开关蓝牙、显示已连接的设备名称。</string>
-    <key>NSScreenCaptureUsageDescription</key>
-    <string>「快捷台」的截图功能需要屏幕录制权限来保存屏幕截图。</string>
-</dict>
-</plist>
-PLIST
+cp Support/Info.plist "$APP/Contents/Info.plist"
 
 codesign --force --sign - "$APP" >/dev/null 2>&1
 

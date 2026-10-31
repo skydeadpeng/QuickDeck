@@ -68,6 +68,18 @@ struct SettingsView: View {
                         Text("\(count) 条").tag(count)
                     }
                 }
+                Button("恢复默认界面") {
+                    panelWidth = 380
+                    appIconSize = 38
+                    clipboardRows = 4
+                    showMonitor = true
+                    showNetwork = true
+                    showClipboard = true
+                    showVolume = true
+                    showMemo = false
+                    showLunar = true
+                    message = "界面已恢复默认，面板位置和快捷方式不受影响"
+                }
             }
 
             Section("快捷键") {

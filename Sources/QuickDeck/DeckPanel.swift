@@ -70,6 +70,10 @@ final class PanelController: NSObject, NSWindowDelegate {
         restorePosition()
         panel.orderFrontRegardless()
         fitToContent()
+        // 启动 1 秒后再校准一次：避免登录自启等场景下窗口尺寸与设置不同步
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.fitToContent()
+        }
 
         // 快捷方式增删 → 高度变化 → 重新计算窗口尺寸
         store.objectWillChange
@@ -97,6 +101,7 @@ final class PanelController: NSObject, NSWindowDelegate {
             panel.orderOut(nil)
             NotificationCenter.default.post(name: .deckPanelVisibilityChanged, object: false)
         } else {
+            fitToContent()
             panel.orderFrontRegardless()
             NotificationCenter.default.post(name: .deckPanelVisibilityChanged, object: true)
         }
